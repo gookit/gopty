@@ -53,7 +53,8 @@ func TestAskPrompt(t *testing.T) {
   实测差异：suga 的 `scripts/wincons` 在 gofer job 里报过这个错，而本库在 gofer job 里
   `cmd.exe` 子进程正常（exit 0）——所以它取决于环境，不要假设哪种。`IsHostBlocked(err)` /
   `IsBlockedExitCode(code)` 用于识别；`ptytest.Start` 会据此 `t.Skip` 并说明原因。
-  真被拒时想测交互提示，用真实控制台驱动（见 gookit/gcli 的 `scripts/wincons`）。
+  真被拒时想测交互提示，用真实控制台驱动（Windows：`AllocConsole` + 子进程 stdin=`CONIN$`，
+  再用 `WriteConsoleInput` 发按键；suga 的 `scripts/wincons` 就是这个模式的现成实现）。
 - `Pty.Close()` 在 Windows 上幂等：`conpty.Close()` 会无条件关闭 4 个管道句柄 + 伪控制台，
   二次调用可能关到 Windows 已复用的句柄值（实测会让测试进程静默挂掉），适配层用 `sync.Once` 护住了。
 - Ctrl-C 等合成按键在 ConPTY 下不等于 `CTRL_C_EVENT`（往输入写 `0x03` 即可，但控制台模式决定）。
