@@ -5,6 +5,12 @@ updates:
   schedule:
     interval: daily
   open-pull-requests-limit: 10
+  ignore:
+    # gopty 刻意把 go 指令留在 1.23(x/sys v0.30.0)：x/sys v0.36.0 起要求 go >= 1.24，
+    # v0.47.0 起要求 go >= 1.25，升上去会连带抬高所有使用方的工具链下限，
+    # 所以只接受 <= v0.35.0 的升级（上限的那一版仍满足 go 1.23）。
+    - dependency-name: "golang.org/x/sys"
+      versions: [">= 0.36.0"]
 
 - package-ecosystem: "github-actions"
   directory: "/"
