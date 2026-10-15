@@ -44,9 +44,12 @@ jobs:
         with:
           go-version: ${{ matrix.go_version }}
 
+      # reviewdog/action-staticcheck only runs on the linux runners: on windows-latest
+      # the action fails before it analyzes anything (every Windows PR leg went red on
+      # it), so gate the step on the OS as well as the event.
       - name: Run staticcheck
         uses: reviewdog/action-staticcheck@v1
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' }}
         with:
           github_token: ${{ secrets.github_token }}
           reporter: github-pr-check
