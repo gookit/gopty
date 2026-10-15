@@ -1,0 +1,68 @@
+name: Unit-Tests
+on:
+  pull_request:
+    paths:
+      - "go.mod"
+      - "**.go"
+      - "**.yml"
+  push:
+    branches: # Only trigger branch pushes; tag pushes are ignored.
+      - "**"
+    paths:
+      - "go.mod"
+      - "**.go"
+      - "**.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test on go ${{ matrix.go_version }} and ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        go_version: ['1.23', '1.24', '1.25', 'stable']
+        include:
+          # darwin shares the unix backend, but it is the platform whose BSD tty layer
+          # flushes unread output on the last close of the slave (see pty_unix.go), so
+          # test the two ends of the supported range on it as well.
+          - os: macOS-latest
+            go_version: '1.23'
+          - os: macOS-latest
+            go_version: 'stable'
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Setup Go SDK
+        uses: actions/setup-go@v7
+        timeout-minutes: 3
+        with:
+          go-version: ${{ matrix.go_version }}
+
+      - name: Run staticcheck
+        uses: reviewdog/action-staticcheck@v1
+        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          github_token: ${{ secrets.github_token }}
+          reporter: github-pr-check
+          filter_mode: added
+          fail_on_error: true
+
+      - name: Tidy go mod
+        run: go mod tidy
+
+      - name: Run unit tests
+        # -v so that a skipped pty case (no backend / host blocked, see ptytest) is
+        # named in the job log instead of only shortening the run.
+        run: go test -v -count=1 ./...
+
+      # The race detector is slow (~5-10x) and only supported on linux/amd64, so run
+      # it on a single recent-Go + ubuntu job instead of the whole matrix.
+      - name: Run unit tests with race detector
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.go_version == 'stable' }}
+        run: go test -race -count=1 ./...
