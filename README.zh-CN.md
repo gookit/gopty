@@ -35,8 +35,7 @@ go get github.com/gookit/gopty/ptytest   # 测试夹具
 
 两个后端满足同一套 `Pty` 契约，所以跑 pty 子进程的程序在 unix worker 与 Windows 上编译和行为一致。
 
-Windows 侧刻意只保留 `golang.org/x/sys` 一个依赖：不像
-[aymanbagabas/go-pty](https://github.com/aymanbagabas/go-pty) 那样拖进 `hcsshim` 一串间接依赖。
+> Windows 侧刻意只保留 `golang.org/x/sys` 一个依赖：不像 `aymanbagabas/go-pty` 那样拖进一串间接依赖。
 
 ## 用法
 

@@ -37,8 +37,8 @@ Requires Go 1.23 or newer.
 Both backends satisfy the same `Pty` contract, so a program that runs pty children compiles and behaves
 the same on a unix worker and on Windows.
 
-The Windows side deliberately keeps `golang.org/x/sys` as its only dependency: it does not pull in
-`hcsshim` and its indirect chain the way [aymanbagabas/go-pty](https://github.com/aymanbagabas/go-pty)
+> The Windows side deliberately keeps `golang.org/x/sys` as its only dependency: it does not pull in
+`hcsshim` and its indirect chain the way `aymanbagabas/go-pty`
 does.
 
 ## Usage
