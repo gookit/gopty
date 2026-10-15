@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/pty"
-	"github.com/inhere/pty/ptytest"
+	"github.com/gookit/gopty"
+	"github.com/gookit/gopty/ptytest"
 )
 
 // TestPromptRoundTrip is the point of the fixtures: wait for a prompt, type an
@@ -98,7 +98,7 @@ func TestStripsANSI(t *testing.T) {
 
 // TestSendEnvAndSize uses StartSpec to pin the Spec knobs the fixtures pass through.
 func TestSendEnvAndSize(t *testing.T) {
-	s := ptytest.StartSpec(t, pty.Spec{
+	s := ptytest.StartSpec(t, gopty.Spec{
 		Command: "sh",
 		Args:    []string{"-c", `stty size; echo env=$PTY_FIXTURE`},
 		Env:     append(os.Environ(), "PTY_FIXTURE=yes"),

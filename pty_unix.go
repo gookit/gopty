@@ -1,6 +1,6 @@
 //go:build unix
 
-package pty
+package gopty
 
 import (
 	"context"

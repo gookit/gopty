@@ -1,6 +1,6 @@
 //go:build windows
 
-package pty
+package gopty
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/inhere/pty/conpty"
+	"github.com/gookit/gopty/conpty"
 	"golang.org/x/sys/windows"
 )
 

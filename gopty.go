@@ -1,4 +1,4 @@
-// Package pty is a small, platform-neutral pty (pseudo terminal) backend: it
+// Package gopty is a small, platform-neutral pty (pseudo terminal) backend: it
 // starts a child process attached to a pty master and hands the caller a raw
 // bidirectional byte stream, plus resize and exit-code wait.
 //
@@ -22,8 +22,8 @@
 // When it is blocked, drive a real console for interactive work instead.
 //
 // Interactive (test) children are best driven through the sibling package
-// github.com/inhere/pty/ptytest, which adds expect/send helpers on this contract.
-package pty
+// github.com/gookit/gopty/ptytest, which adds expect/send helpers on this contract.
+package gopty
 
 import (
 	"context"

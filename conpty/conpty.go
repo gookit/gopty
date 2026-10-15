@@ -5,7 +5,7 @@
 // Copied in to self-maintain the Windows pty backend without pulling a third-party
 // module: it depends only on golang.org/x/sys/windows + stdlib (the alternative,
 // aymanbagabas/go-pty, drags in microsoft/hcsshim). Import path is
-// github.com/inhere/pty/conpty. Only this header was added — the code below
+// github.com/gookit/gopty/conpty. Only this header was added — the code below
 // (build tags + package) is upstream verbatim.
 
 //go:build windows

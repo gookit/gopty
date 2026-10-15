@@ -9,8 +9,8 @@
 
 | 包 | 作用 |
 |---|---|
-| `github.com/inhere/pty` | 产品用：`Spec` + `Start`（unix=creack/pty，windows=内置 vendored ConPTY）+ `Pty`(Read/Write/Resize/Wait/Close) + `IsAvailable()` / `IsHostBlocked(err)` |
-| `github.com/inhere/pty/ptytest` | 测试用：在 pty 里跑一个命令并提供 expect/发送/断言/收尾（`Expect`/`Count`/`Text`(剥 ANSI)/`Send`/`SendLine`/`SendCtrlC`/`SendKeys`/`WaitExit`/`Cleanup`），不可用时自动 `t.Skip` |
+| `github.com/gookit/gopty` | 产品用：`Spec` + `Start`（unix=creack/pty，windows=内置 vendored ConPTY）+ `Pty`(Read/Write/Resize/Wait/Close) + `IsAvailable()` / `IsHostBlocked(err)` |
+| `github.com/gookit/gopty/ptytest` | 测试用：在 pty 里跑一个命令并提供 expect/发送/断言/收尾（`Expect`/`Count`/`Text`(剥 ANSI)/`Send`/`SendLine`/`SendCtrlC`/`SendKeys`/`WaitExit`/`Cleanup`），不可用时自动 `t.Skip` |
 
 ## 依赖
 
@@ -23,7 +23,7 @@ vendored 的 `./conpty`（UserExistsError/conpty 单文件版，MIT，见 `conpt
 产品侧：
 
 ```go
-import "github.com/inhere/pty"
+import "github.com/gookit/gopty"
 
 p, err := pty.Start(pty.Spec{Command: "bash", Cols: 100, Rows: 30})
 defer p.Close()
@@ -34,7 +34,7 @@ code, err := p.Wait(ctx)
 测试侧：
 
 ```go
-import "github.com/inhere/pty/ptytest"
+import "github.com/gookit/gopty/ptytest"
 
 func TestAskPrompt(t *testing.T) {
 	s := ptytest.Start(t, "sh", "-c", `printf "name? "; read n; echo got=$n`)

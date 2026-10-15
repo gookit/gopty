@@ -2,7 +2,7 @@
 // wait for the prompt, type, assert on the output, then shut it down.
 //
 // It is the Go counterpart of a "pty smoke script" (the same semantics a Python
-// pty driver or a Windows-console harness provides), built on github.com/inhere/pty
+// pty driver or a Windows-console harness provides), built on github.com/gookit/gopty
 // so the same test code runs on unix and on Windows (where the pty backend is
 // ConPTY). It is a *test* package: it takes a *testing.T, fails/skips it with a
 // useful message, and registers its own cleanup.
@@ -41,7 +41,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inhere/pty"
+	"github.com/gookit/gopty"
 )
 
 // Terminal keys a test usually needs to send.
@@ -61,7 +61,7 @@ var ansiCSI = regexp.MustCompile("\x1b\\[[0-9;?]*[A-Za-z]")
 // Session is one program running under a pty with its output collected.
 type Session struct {
 	t *testing.T
-	p pty.Pty
+	p gopty.Pty
 
 	mu         sync.Mutex
 	buf        bytes.Buffer
@@ -82,19 +82,19 @@ type Session struct {
 // Environment and working directory are inherited; use StartSpec to set them.
 func Start(t *testing.T, command string, args ...string) *Session {
 	t.Helper()
-	return StartSpec(t, pty.Spec{Command: command, Args: args, Cols: 120, Rows: 40})
+	return StartSpec(t, gopty.Spec{Command: command, Args: args, Cols: 120, Rows: 40})
 }
 
-// StartSpec is Start with a full pty.Spec (env, dir, initial size).
-func StartSpec(t *testing.T, spec pty.Spec) *Session {
+// StartSpec is Start with a full gopty.Spec (env, dir, initial size).
+func StartSpec(t *testing.T, spec gopty.Spec) *Session {
 	t.Helper()
-	if !pty.IsAvailable() {
+	if !gopty.IsAvailable() {
 		t.Skipf("no pty backend on this host (%s)", runtime.GOOS)
 	}
 
-	p, err := pty.Start(spec)
+	p, err := gopty.Start(spec)
 	if err != nil {
-		if pty.IsHostBlocked(err) {
+		if gopty.IsHostBlocked(err) {
 			t.Skipf("this process context cannot host a pty child: %v", err)
 		}
 		t.Fatalf("ptytest: start %s: %v", spec.Command, err)
@@ -260,7 +260,7 @@ func (s *Session) Code() *int {
 	return &code
 }
 
-// Close kills the child (if alive) and releases the pty. It is registered by Start
+// Close kills the child (if alive) and releases the gopty. It is registered by Start
 // as the test cleanup; call it directly to tear down earlier.
 func (s *Session) Close() error {
 	err := s.p.Close()
@@ -279,7 +279,7 @@ func (s *Session) skipIfBlocked() {
 	s.mu.Lock()
 	code, werr := s.code, s.werr
 	s.mu.Unlock()
-	if werr != nil && pty.IsHostBlocked(werr) || pty.IsBlockedExitCode(code) {
+	if werr != nil && gopty.IsHostBlocked(werr) || gopty.IsBlockedExitCode(code) {
 		s.t.Skipf("this process context cannot host a pty child (job object): exit code %d, err %v", code, werr)
 	}
 }

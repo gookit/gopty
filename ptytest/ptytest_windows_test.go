@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/inhere/pty"
-	"github.com/inhere/pty/ptytest"
+	"github.com/gookit/gopty"
+	"github.com/gookit/gopty/ptytest"
 )
 
 // TestPromptRoundTripWindows is the Windows twin of the unix round trip: the
@@ -36,7 +36,7 @@ func TestPromptRoundTripWindows(t *testing.T) {
 // Env reaches the child (with os.Environ() as the base, so the shell has PATH) and
 // the initial window size is applied.
 func TestStartSpecEnvOnWindows(t *testing.T) {
-	s := ptytest.StartSpec(t, pty.Spec{
+	s := ptytest.StartSpec(t, gopty.Spec{
 		Command: "cmd.exe",
 		Args:    []string{"/c", "echo env=%PTY_FIXTURE% & mode con"},
 		Env:     append(os.Environ(), "PTY_FIXTURE=yes"),

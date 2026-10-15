@@ -1,6 +1,6 @@
 //go:build windows
 
-package pty
+package gopty
 
 import (
 	"context"
