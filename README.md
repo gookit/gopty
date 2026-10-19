@@ -117,6 +117,11 @@ Rules of thumb:
   fine, another harness was blocked) — so do not assume either result.
 - When the host blocks ConPTY and you still need to test interactive prompts, drive a real console:
   `AllocConsole`, child stdin = `CONIN$`, then send keys with `WriteConsoleInput`.
+- After the child has exited on its own, `Close()` first drains what conhost is still forwarding, so the
+  last lines a short-lived child printed are not discarded: ConPTY's output pipe does not report EOF while
+  the pseudo console is open (closing it is what ends the stream), so the drain waits for the pipe to go
+  **quiet** (250ms without a read) instead of for EOF, and gives up at 2s (`drainGrace`, the same bound the
+  unix backend uses). A live child (cancel) is torn down at once.
 - `Close()` is idempotent. The vendored `conpty.Close()` closes four pipe handles and the pseudo console
   unconditionally, and a second close would release handle values Windows may have reused since
   (observed to take the test binary down silently); the adapter guards it with `sync.Once`.

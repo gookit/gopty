@@ -25,13 +25,6 @@ func IsHostBlocked(error) bool { return false }
 // IsBlockedExitCode is always false on unix: a unix pty child always runs.
 func IsBlockedExitCode(int) bool { return false }
 
-// drainGrace bounds how long Close, after the child has exited on its own, waits
-// for the reader to drain the pty to EOF before closing the master. A reader that
-// keeps up hits EOF almost at once; the bound only matters when nobody reads, or
-// when a grandchild that outlived the child still holds the terminal (EOF then
-// never comes and the master is closed anyway, as before).
-var drainGrace = 2 * time.Second
-
 // Start runs spec under a freshly allocated pty (unix: creack/pty).
 //
 // Unlike creack.Start, the parent keeps its own slave fd until the child has been

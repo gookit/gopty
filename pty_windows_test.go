@@ -4,6 +4,7 @@ package gopty
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -68,6 +69,140 @@ func TestStartKeepsExtraEnvOverInherited(t *testing.T) {
 	default:
 		t.Fatalf("no %q in the child's output within the deadline: %q", "PTY_DUP_TEST=", out.String())
 	}
+}
+
+// TestCloseAfterExitKeepsConPTYOutput is the regression test for output lost at Close:
+// the child prints a long burst and exits right away, and everything it printed must
+// still arrive even though Close tears the pty down as soon as the exit is known.
+//
+// ConPTY does not hand the child's bytes to the parent directly: conhost renders the
+// console buffer and writes it to the output pipe asynchronously, so at the moment the
+// child is reaped a good part of the burst is still in conhost/the pipe. Closing the
+// pseudo-console there (what Close did before) discards it — a writer lost the last
+// lines it had already printed. The reader is paced rather than greedy so the amount
+// Close has not seen yet is a property of the backend, not of the scheduler.
+func TestCloseAfterExitKeepsConPTYOutput(t *testing.T) {
+	if !IsAvailable() {
+		t.Skip("pty backend not available")
+	}
+
+	const lines = 400
+	// ~55 bytes per line, so the burst (~22 KiB) fits in the output pipe (~64 KiB): the
+	// child is not slowed down by its own output and exits right after writing it.
+	filler := strings.Repeat("x", 40)
+	burst := fmt.Sprintf("for /L %%i in (1,1,%d) do @echo PTYDRAIN-%%i-%s", lines, filler)
+	wantTail := fmt.Sprintf("PTYDRAIN-%d-%s", lines, filler)
+
+	p, err := Start(Spec{Command: "cmd.exe", Args: []string{"/c", burst}, Cols: 200, Rows: 50})
+	if err != nil {
+		skipIfHostBlocked(t, err)
+		t.Fatalf("Start: %v", err)
+	}
+
+	// The pump reads while the child runs, the way a real consumer does.
+	out := &ptySink{}
+	pumpDone := make(chan struct{})
+	go func() {
+		defer close(pumpDone)
+		copyPaced(out, p, 1024, 5*time.Millisecond)
+	}()
+
+	waitCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	code, werr := p.Wait(waitCtx)
+	if werr != nil {
+		_ = p.Close()
+		skipIfHostBlocked(t, werr)
+		t.Fatalf("Wait: %v", werr)
+	}
+	if IsBlockedExitCode(code) {
+		_ = p.Close()
+		t.Skipf("a ConPTY child cannot run in this process context (job object): exit code 0x%x", uint32(code))
+	}
+
+	_ = p.Close()
+	waitClosed(t, pumpDone, 30*time.Second, "the pump to stop after Close")
+
+	got := out.String()
+	t.Logf("exit %d, %d bytes read, %d/%d burst lines", code, len(got), strings.Count(got, "PTYDRAIN-"), lines)
+	if !strings.Contains(got, wantTail) {
+		t.Fatalf("the tail of the child's output was lost by Close: %d/%d burst lines arrived, missing up to %q; output ends with %q",
+			strings.Count(got, "PTYDRAIN-"), lines, wantTail, tailOf(got, 160))
+	}
+}
+
+// TestCloseWithoutReaderIsBoundedAfterExit: with the child already gone and nobody
+// reading the pipe, Close has nothing to drain and must still return promptly — the
+// drain of an exited child is bounded by drainGrace, it never waits for a reader that
+// does not exist.
+func TestCloseWithoutReaderIsBoundedAfterExit(t *testing.T) {
+	if !IsAvailable() {
+		t.Skip("pty backend not available")
+	}
+
+	p, err := Start(Spec{Command: "cmd.exe", Args: []string{"/c", "echo unread"}, Cols: 80, Rows: 24})
+	if err != nil {
+		skipIfHostBlocked(t, err)
+		t.Fatalf("Start: %v", err)
+	}
+
+	waitCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	code, werr := p.Wait(waitCtx)
+	if werr != nil {
+		_ = p.Close()
+		skipIfHostBlocked(t, werr)
+		t.Fatalf("Wait: %v", werr)
+	}
+	if IsBlockedExitCode(code) {
+		_ = p.Close()
+		t.Skipf("a ConPTY child cannot run in this process context (job object): exit code 0x%x", uint32(code))
+	}
+
+	closed := make(chan struct{})
+	start := time.Now()
+	go func() {
+		defer close(closed)
+		_ = p.Close()
+	}()
+	waitClosed(t, closed, drainGrace+10*time.Second, "Close to return with no reader")
+	t.Logf("Close with no reader returned after %s (drainGrace %s)", time.Since(start).Round(time.Millisecond), drainGrace)
+}
+
+// copyPaced copies r into w in small chunks with a gap between reads: it stands in for
+// a consumer that does not drain the pipe in one gulp, which keeps the amount of output
+// still in flight when Close runs a property of the backend instead of a race with the
+// scheduler.
+func copyPaced(w io.Writer, r io.Reader, chunk int, gap time.Duration) {
+	buf := make([]byte, chunk)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			_, _ = w.Write(buf[:n])
+		}
+		if err != nil {
+			return
+		}
+		time.Sleep(gap)
+	}
+}
+
+// waitClosed fails the test when ch is not closed within d.
+func waitClosed(t *testing.T, ch <-chan struct{}, d time.Duration, what string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(d):
+		t.Fatalf("timed out after %s waiting for %s", d, what)
+	}
+}
+
+// tailOf returns the last n bytes of s, for a readable failure message.
+func tailOf(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return "..." + s[len(s)-n:]
 }
 
 // exitResult is one Wait outcome.

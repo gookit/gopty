@@ -5,9 +5,12 @@ package gopty
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/gookit/gopty/conpty"
 	"golang.org/x/sys/windows"
@@ -63,8 +66,25 @@ func Start(spec Spec) (Pty, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &winPty{c: c}, nil
+	p := &winPty{c: c, exited: make(chan struct{}), readEnd: make(chan struct{})}
+	go p.reap()
+	return p, nil
 }
+
+// drainQuiet is how long the windows drain accepts silence on the output pipe as "the
+// child's output has been delivered". ConPTY hands the child's bytes to the parent
+// through conhost, and that pipe does NOT report EOF while the pseudo console is open
+// — ClosePseudoConsole is what ends the stream — so EOF cannot be the drain's signal
+// the way it is on unix. Silence is: output arrives in chunks, and the render lag
+// observed on this host is a few hundred bytes to a few KiB, far inside this window.
+var drainQuiet = 250 * time.Millisecond
+
+// drainPoll is how often the drain re-checks the pipe while it waits.
+const drainPoll = 20 * time.Millisecond
+
+// statusStillActive is STILL_ACTIVE (259): what Wait reports for a cancelled context,
+// matching what the underlying conpty.Wait answered for it.
+const statusStillActive = 259
 
 // winPty adapts *conpty.ConPty to the Pty interface.
 type winPty struct {
@@ -76,20 +96,98 @@ type winPty struct {
 	// call twice (defer + a fixture's cleanup both do it).
 	closeOnce sync.Once
 	closeErr  error
+
+	exited  chan struct{} // closed once the child is known to have exited; code/waitErr valid after
+	code    int
+	waitErr error
+
+	lastRead atomic.Int64 // UnixNano of the last Read that returned data; 0 = none yet
+	readEnd  chan struct{} // closed when a Read first fails (EOF/error/closed)
+	readOnce sync.Once
 }
 
-func (p *winPty) Read(b []byte) (int, error)  { return p.c.Read(b) }
+// reap publishes the child's exit. ConPTY has no exit notification, and the only
+// handle to the process lives inside the ConPty value, so the exit is taken on its own
+// goroutine — conpty.Wait blocks in WaitForSingleObject and wakes as soon as the
+// process is signalled. Close has to know whether the child exited on its own (even
+// when the caller never called Wait) before it decides to drain.
+func (p *winPty) reap() {
+	code, err := p.c.Wait(context.Background())
+	p.code, p.waitErr = int(code), err
+	close(p.exited)
+}
+
+func (p *winPty) Read(b []byte) (int, error) {
+	n, err := p.c.Read(b)
+	if n > 0 {
+		p.lastRead.Store(time.Now().UnixNano())
+	}
+	if err != nil {
+		p.readOnce.Do(func() { close(p.readEnd) })
+	}
+	return n, err
+}
+
 func (p *winPty) Write(b []byte) (int, error) { return p.c.Write(b) }
 func (p *winPty) Resize(cols, rows int) error { return p.c.Resize(cols, rows) }
 
+// Close releases the pseudo-console and the pipes.
+//
+// When the child has already exited on its own, Close first drains (see drain): the
+// bytes it wrote right before exiting may still be in conhost on their way to the
+// output pipe, and closing the pseudo-console discards whatever has not been handed
+// over yet. A live child (cancel) is torn down at once, as before.
 func (p *winPty) Close() error {
-	p.closeOnce.Do(func() { p.closeErr = p.c.Close() })
+	p.closeOnce.Do(func() {
+		p.drain()
+		p.closeErr = p.c.Close()
+	})
 	return p.closeErr
 }
 
+// drain waits for the output the child wrote before exiting to reach the reader, so
+// that closing the pseudo-console does not throw it away. It returns as soon as the
+// pipe has been quiet for drainQuiet — no Read returned data for that long, i.e. the
+// reader has everything conhost had — and at the latest at drainGrace after the call,
+// so a reader that lags or does not exist cannot make Close hang (the unix backend
+// drains to EOF with the same bound; see gopty.drainGrace).
+func (p *winPty) drain() {
+	select {
+	case <-p.exited:
+	default:
+		return // child still running: the caller is tearing it down on purpose
+	}
+	// The quiet window is measured from the start of the drain as well as from the last
+	// read, so output a reader is about to pick up still gets its window even if nothing
+	// has read yet, and Close stays bounded either way.
+	quietSince := time.Now()
+	deadline := quietSince.Add(drainGrace)
+	for time.Now().Before(deadline) {
+		if last := time.Unix(0, p.lastRead.Load()); last.After(quietSince) {
+			quietSince = last
+		}
+		if time.Since(quietSince) >= drainQuiet {
+			return
+		}
+		select {
+		case <-p.readEnd:
+			return // the stream already ended: nothing is left to drain
+		default:
+		}
+		time.Sleep(drainPoll)
+	}
+}
+
+// Wait returns the child's exit code once it has exited (the reaper runs from Start). A
+// real process exit is (code, nil); a cancelled context reports "no exit code yet"
+// (STILL_ACTIVE) without reaping, the way the underlying conpty.Wait did.
 func (p *winPty) Wait(ctx context.Context) (int, error) {
-	code, err := p.c.Wait(ctx)
-	return int(code), err
+	select {
+	case <-p.exited:
+		return p.code, p.waitErr
+	case <-ctx.Done():
+		return statusStillActive, fmt.Errorf("wait canceled: %v", ctx.Err())
+	}
 }
 
 // buildCommandLine joins the command + args into a single Windows command line,

@@ -28,6 +28,7 @@ package gopty
 import (
 	"context"
 	"io"
+	"time"
 )
 
 // Spec is a platform-neutral request to start a child under a pty.
@@ -43,7 +44,8 @@ type Spec struct {
 // Pty is a running child attached to a pty master. Read/Write carry the raw byte
 // stream to/from the child (stdout+stderr multiplexed on Read, stdin on Write);
 // Resize sets the terminal window size; Wait blocks for the child to exit and
-// returns its exit code. Close releases the master fd (and, on unix, kills the
+// returns its exit code. Close drains the output the child wrote before exiting
+// (bounded by drainGrace), then releases the master fd (and, on unix, kills the
 // child) — teardown ORDER is owned by the caller's state machine, this type only
 // provides the primitives.
 type Pty interface {
@@ -55,6 +57,15 @@ type Pty interface {
 	// reaping; the caller kills via Close and calls Wait once.
 	Wait(ctx context.Context) (exitCode int, err error)
 }
+
+// drainGrace bounds the drain Close performs when the child has already exited on
+// its own: the output the child wrote right before exiting can still be in the pty
+// (unix: the master's queue; windows: conhost on its way to the output pipe), and
+// closing the pty under the reader would discard it. Each backend has its own signal
+// for "the reader has everything" — unix EOF on the master, windows the output pipe
+// going quiet (see drainQuiet) — and both give up at drainGrace, so an exited child
+// whose reader is slow or missing can never make Close hang.
+var drainGrace = 2 * time.Second
 
 // Start launches spec.Command under a pty and returns the live Pty. Start and
 // IsAvailable are provided by the platform files so the common contract above

@@ -109,6 +109,9 @@ func TestAskName(t *testing.T) {
   情况（`cmd.exe` 正常、另一个 harness 被拒）——所以不要预设哪一种。
 - 宿主确实拒绝 ConPTY、又必须测交互提示时，改用真实控制台驱动：`AllocConsole`、子进程 stdin 指向
   `CONIN$`，再用 `WriteConsoleInput` 发按键。
+- 子进程已自行退出时，`Close()` 会先把 conhost 还在转发的输出 drain 出来，避免丢掉短命子进程最后打印的几行：
+  伪控制台打开期间 ConPTY 的输出管道不会 EOF（关闭伪控制台才是流的终点），所以这里等的是管道**静默**
+  （250ms 没有读到数据）而不是 EOF，上限 2s（`drainGrace`，与 unix 后端同一个上限）。子进程还活着（取消）时立即拆除。
 - `Close()` 幂等。vendored 的 `conpty.Close()` 会无条件关闭 4 个管道句柄 + 伪控制台，二次调用会
   关到 Windows 可能已复用的句柄值（实测会让测试进程静默挂掉），适配层用 `sync.Once` 护住了。
 - 往输入写 `0x03` 合成的 Ctrl-C 不等于 `CTRL_C_EVENT`，子进程的控制台模式决定它怎么被读取。
